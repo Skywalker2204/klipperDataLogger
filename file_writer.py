@@ -6,8 +6,7 @@ Created on Mon Feb 21 03:38:21 2022
 @author: lukashentschel
 """
 
-import logging, copy
-import os
+import logging, copy, os
 
 # Wrapper for access to printer object get_status() methods
 class GetStatusWrapper:
@@ -40,37 +39,37 @@ class GetStatusWrapper:
 class fileWriter:
     def __init__(self, config):
         self.printer=config.get_printer()
-        
-        # Print Stat Tracking
-        self.wrapper = GetStatusWrapper()
-        
-        self.is_Printing = 'printing' in self.wrapper['print_stats']['state']
-        self.path = self.wrapper['virtual_sdcard']['file_path']
+        self.is_active=False
 
-        self.is_Active = False
-        
-        self.values = {'extruder' : 'tempeature', 
-                       'bed' : 'temperature', 
+        # Print Stat Tracking
+        self.wrapper = GetStatusWrapper(self.printer)
+        self.stats = self.printer.lookup_object('print_stats')
+        self.is_Printing = False #'printing' in self.wrapper['print_stats']['state']
+        self.path = ''#self.wrapper['virtual_sdcard']['file_path']
+
+        self.values = {'extruder' : 'tempeature',
+                       'bed' : 'temperature',
                        'optical_filament_width_sensor':'diameter'}
+
         self.header = ''
         self.filename=''
-        
+
         #Register commands
         gcode = self.printer.lookup_object('gcode')
-        gcode.register_command("DATA_LOGGING_ENABLE", self.cmd_log_enable())        
-        gcode.register_command("DATA_LOGGING_DISABLE", self.cmd_log_disable())        
-        gcode.register_command("DATA_LOGGING_ADD_VALUE", self.cmd_add_value())
-    
-    # Constructor of the text line           
+        gcode.register_command("DATA_LOGGING_ENABLE", self.cmd_log_enable)
+        gcode.register_command("DATA_LOGGING_DISABLE", self.cmd_log_disable)
+        gcode.register_command("DATA_LOGGING_ADD_VALUE", self.cmd_add_value)
+    """
+    # Constructor of the text line
     def _write_values(self, delimiter='\t'):
         line = '\n'+self.wrapper['print_stats']['print_duration']+delimiter
         for obj, value in self.values():
             try:
                 for val in value:
                     line += "{:.3f}".format(self.wrapper[obj][val])+delimiter
-            except TypeError:                
+            except TypeError:
                 line += "{:.3f}".format(self.wrapper[obj][value])+delimiter
-        self._write_line(line)        
+        self._write_line(line)
         pass
     #Constructor for the Header
     def _write_header(self, delimiter='\t'):
@@ -89,27 +88,27 @@ class fileWriter:
         with open(os.path.join(self.path, self.filename), 'a') as file:
             file.write(text)
         pass
-    #Main event running    
+    #Main event running
     def logger_event(self, eventtime):
-        if self.is_Active() and self.is_Printing:
+        if self.is_active() and self.is_Printing:
             if self.filename=='':
                 self.filename = self.wrapper['print_stats']['filename'].replace('.gcode', '_log.out')
             if self.header == 0: self._write_header()
             self._write_values()
+    """
     #Definition of Commands
     def cmd_log_enable(self, gcmd):
-        self.is_Active=True
+        self.is_active=True
         gcmd.respond_info("Data logging is enabled")
         pass
-    
+
     def cmd_log_disable(self, gcmd):
-        self.is_Active=False
+        self.is_active=False
         gcmd.respond_info("Data logging is disabled")
         pass
-    
     def cmd_add_value(self, gcmd):
         obj, value = gcmd.get('VALUE').split()
-        if obj in self.wrapper: 
+        if obj in self.wrapper:
             self.values.update({obj:value})
             gcmd.respond_info("Added Value for logging")
         else:
@@ -117,7 +116,7 @@ class fileWriter:
 
     #Add a status variable
     def get_status(self, eventtime):
-        return {'is_Active':self.is_Active}
+        return {'is_active':self.is_active}
 
 
 def load_config(config):
