@@ -8,61 +8,37 @@ Created on Mon Feb 21 03:38:21 2022
 
 import logging, copy, os
 
-# Wrapper for access to printer object get_status() methods
-class GetStatusWrapper:
-    def __init__(self, printer, eventtime=None):
-        self.printer = printer
-        self.eventtime = eventtime
-        self.cache = {}
-    def __getitem__(self, val):
-        sval = str(val).strip()
-        if sval in self.cache:
-            return self.cache[sval]
-        po = self.printer.lookup_object(sval, None)
-        if po is None or not hasattr(po, 'get_status'):
-            raise KeyError(val)
-        if self.eventtime is None:
-            self.eventtime = self.printer.get_reactor().monotonic()
-        self.cache[sval] = res = copy.deepcopy(po.get_status(self.eventtime))
-        return res
-    def __contains__(self, val):
-        try:
-            self.__getitem__(val)
-        except KeyError as e:
-            return False
-        return True
-    def __iter__(self):
-        for name, obj in self.printer.lookup_objects():
-            if self.__contains__(name):
-                yield name
-
 class fileWriter:
     def __init__(self, config):
         self.printer=config.get_printer()
+        #get objects
+        self.stats = self.printer.load_object(config, 'print_stats')
+        self.sd = self.printer.load_object(config, 'virtual_sd')
+        #internal 
         self.is_active=False
-
-        # Print Stat Tracking
-        self.wrapper = GetStatusWrapper(self.printer)
-        self.stats = self.printer.lookup_object('print_stats')
-        self.is_Printing = False #'printing' in self.wrapper['print_stats']['state']
-        self.path = ''#self.wrapper['virtual_sdcard']['file_path']
-
+        self.is_Printing = False
+        self.path = None
+        self.filename=''
         self.values = {'extruder' : 'tempeature',
                        'bed' : 'temperature',
                        'optical_filament_width_sensor':'diameter'}
-
-        self.header = ''
-        self.filename=''
-
+        self.eventtime=None
+        self.objs = {}
+        self.text=''
         #Register commands
-        gcode = self.printer.lookup_object('gcode')
-        gcode.register_command("DATA_LOGGING_ENABLE", self.cmd_log_enable)
-        gcode.register_command("DATA_LOGGING_DISABLE", self.cmd_log_disable)
-        gcode.register_command("DATA_LOGGING_ADD_VALUE", self.cmd_add_value)
-    """
+        self.gcode = self.printer.lookup_object('gcode')
+        self.gcode.register_command("DATA_LOGGING_ENABLE", self.cmd_log_enable)
+        self.gcode.register_command("DATA_LOGGING_DISABLE", self.cmd_log_disable)
+        self.gcode.register_command("DATA_LOGGING_ADD_VALUE", self.cmd_add_value)
     # Constructor of the text line
+    def lookup_objects(self, config):
+        for key, val in self.values.items():
+            if self.objs[key]:
+                self.gcode.responde_info('Object already loaded')
+            else:
+                self.objs[key]=self.printer.load_object(config, key)
     def _write_values(self, delimiter='\t'):
-        line = '\n'+self.wrapper['print_stats']['print_duration']+delimiter
+        line = '\n'+self.stats.get_status(self.eventtime)['print_duration']+delimiter
         for obj, value in self.values():
             try:
                 for val in value:
@@ -84,7 +60,7 @@ class fileWriter:
             self._write_line(self.header)
         return self.header
     #file write method
-    def _write_line(self, text):
+    def _write_to_file(self, text):
         with open(os.path.join(self.path, self.filename), 'a') as file:
             file.write(text)
         pass
@@ -95,7 +71,6 @@ class fileWriter:
                 self.filename = self.wrapper['print_stats']['filename'].replace('.gcode', '_log.out')
             if self.header == 0: self._write_header()
             self._write_values()
-    """
     #Definition of Commands
     def cmd_log_enable(self, gcmd):
         self.is_active=True
