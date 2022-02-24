@@ -17,14 +17,16 @@ class fileWriter:
         self.print_stats = self.printer.load_object(config, 'print_stats')
         #internal Variables !!!Dont use global variables!!!!!
         self.is_active = False
+        self.is_log = True
         self.values = {'extruder' : 'tempeature',
                        'bed' : 'temperature',
                        'optical_filament_width_sensor':'diameter'}
         self.eventtime = None
-        self.objs = {}
         self.text = ''
         self.duration = 0.
         #register the event handler
+        self.logger_update_timer = self.reactor.register_timer(
+            self._logger_event())
         self.printer.register_event_handler("klippy:ready", self._handle_ready)
         #Register commands
         self.gcode = self.printer.lookup_object('gcode')
@@ -42,8 +44,8 @@ class fileWriter:
         waketime = self.reactor.NEVER
         if self.duration:
             waketime = self.reactor.monotonic() + self.duration
-        self.timer_handler = self.reactor.register_timer(
-            self._logger_event, waketime)
+        self.reactor.update_timer(
+            self.logger_update_timer, waketime)
         pass
     #look p for values
     def _lookup_objects(self, obj):
@@ -65,8 +67,8 @@ class fileWriter:
                 line += "{:.3f}".format(po.get_status()[value])+delimiter
             except Exception as e:
                 line += 'nan'+delimiter
+        if self.is_log: logging.info(line)
         self.text += line
-        pass
     #Constructor for the Header
     def _write_header(self, delimiter='\t'):
         for obj, value in self.values():
@@ -86,8 +88,9 @@ class fileWriter:
     #Main event running
     def _logger_event(self, eventtime):
         nextwake = self.reactor.NEVER
-        if self.is_active():
-            logging.info("Now the Data logger is active: ", str(eventtime))
+        if self.is_active:
+            if self.is_log:logging.info(
+                    "Now the Data logger is active: ", str(eventtime))
             if self.sd.get_status(eventtime)['is_active']:
                 if self.text == '': self._write_header()
                 self._write_values() 
@@ -97,22 +100,31 @@ class fileWriter:
     def cmd_log_enable(self, gcmd):
         self.is_active=True
         self.duration=gcmd.get_float('DURATION', default=1., minval=0.)
+        self.reactor.update_timer(
+            self.logger_update_timer, self.reactor.NOW)
         gcmd.respond_info("Data logging is enabled")
         pass
     def cmd_log_disable(self, gcmd):
         self.is_active=False
+        self.reactor.update_timer(
+            self.logger_update_timer, self.reactor.NEVER)
         gcmd.respond_info("Data logging is disabled")
         pass
     def cmd_add_value(self, gcmd):
-        obj, value = gcmd.get('VALUE', default='nan.nan').split()
-        if obj!='nan':
-            po = self.printer.lookup_object(obj, None)
-            if po is None or not hasattr(po, 'get_status'):
-                raise KeyError(obj) 
-            self.values.update({obj:value})
-            gcmd.respond_info("Added Value for logging")
-        else:
+        raw_input = gcmd.get('VALUE', default=None)
+        if  not raw_input:
             gcmd.respond_info("No object is given in VALUE!")
+            return
+        try:
+            obj, value = raw_input.split('.')
+        except Exception as e:
+            if self.is_log: logging.info(e)
+            gcmd.respond_info("Wrong format of input! Try obj.value")
+        po = self.printer.lookup_object(obj, None)
+        if po is None or not hasattr(po, 'get_status'):
+            raise KeyError(obj) 
+        self.values.update({obj:value})
+        gcmd.respond_info("Added Value for logging")
     def cmd_clear(self, gcmd):
         self.text = ''
         gcmd.responde_info("Cleared data in the cache")
