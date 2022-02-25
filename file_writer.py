@@ -18,15 +18,15 @@ class fileWriter:
         #internal Variables !!!Dont use global variables!!!!!
         self.is_active = False
         self.is_log = True
-        self.values = {'extruder' : 'tempeature',
-                       'bed' : 'temperature',
-                       'optical_filament_width_sensor':'diameter'}
-        self.eventtime = None
+        self.values = {'extruder' : 'temperature',
+                       'heater_bed' : 'temperature',
+                       'optical_filament_width_sensor':'Diameter'}
+        self.eventtime = self.reactor.NEVER
         self.text = ''
         self.duration = 0.
         #register the event handler
         self.logger_update_timer = self.reactor.register_timer(
-            self._logger_event())
+            self._logger_event)
         self.printer.register_event_handler("klippy:ready", self._handle_ready)
         #Register commands
         self.gcode = self.printer.lookup_object('gcode')
@@ -48,38 +48,30 @@ class fileWriter:
             self.logger_update_timer, waketime)
         pass
     #look p for values
-    def _lookup_objects(self, obj):
+    def _lookup_object(self, obj):
         po = self.printer.lookup_object(obj, None)
         if po is None or not hasattr(po, 'get_status'):
             raise KeyError(obj)
         return po
     #Construction of the line
-    def _write_values(self, delimiter='\t'):
-        line = '\n'+self.print_stats.get_status(
-            self.eventtime)['print_duration']+delimiter
-        if len(self.objs) == 0: self.lookup_objects()
-        for obj, value in self.values:
-            po = self._lookup_objects(obj)
-            try:
-                for val in value:
-                    line += "{:.3f}".format(po.get_status()[val])+delimiter
-            except TypeError:
-                line += "{:.3f}".format(po.get_status()[value])+delimiter
-            except Exception as e:
-                line += 'nan'+delimiter
-        if self.is_log: logging.info(line)
-        self.text += line
+    def _write_values(self, eventtime, delimiter='\t'):
+        pd = self.print_stats.get_status(eventtime)['print_duration']
+        if pd:
+            line = '\n' + str(pd) + delimiter
+            for obj, value in self.values.items():
+                po = self._lookup_object(obj)
+                try:
+                    line += str(po.get_status(eventtime)[value])+delimiter
+                except Exception as e:
+                    line += str(e)+delimiter
+            if self.is_log: self.gcode.respond_info(line)
+            self.text += line
     #Constructor for the Header
     def _write_header(self, delimiter='\t'):
-        for obj, value in self.values():
-            header = 'time'+delimiter
-            try:
-                for i in value:
-                    header += obj +" " + i + delimiter
-                    pass
-            except TypeError:
-                self.header += obj +" " + value + delimiter
-            self.text = header
+        header = 'time'+delimiter
+        for obj, value in self.values.items():
+            header += obj + " " + value + delimiter
+        self.text = header
     #file write method
     def _save_to_file(self, filename):
         with open(os.path.join(self.path, filename), 'a') as file:
@@ -89,11 +81,12 @@ class fileWriter:
     def _logger_event(self, eventtime):
         nextwake = self.reactor.NEVER
         if self.is_active:
-            if self.is_log:logging.info(
-                    "Now the Data logger is active: ", str(eventtime))
-            if self.print_stats.get_status(eventtime)['stats']=='printing':
+            if self.is_log:
+                self.gcode.respond_info(
+                    "Now the Data logger is active: "+ str(eventtime))
+            if self.print_stats.get_status(eventtime)['state']=='printing':
                 if self.text == '': self._write_header()
-                self._write_values() 
+                self._write_values(eventtime)
             nextwake = eventtime + self.duration
         return nextwake
     #Definition of Commands
