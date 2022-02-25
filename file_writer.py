@@ -91,7 +91,7 @@ class fileWriter:
         if self.is_active:
             if self.is_log:logging.info(
                     "Now the Data logger is active: ", str(eventtime))
-            if self.sd.get_status(eventtime)['is_active']:
+            if self.print_stats.get_status(eventtime)['stats']=='printing':
                 if self.text == '': self._write_header()
                 self._write_values() 
             nextwake = eventtime + self.duration
