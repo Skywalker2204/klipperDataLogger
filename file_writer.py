@@ -16,13 +16,14 @@ class fileWriter:
         self.sd = self.printer.load_object(config, 'virtual_sdcard')
         self.print_stats = self.printer.load_object(config, 'print_stats')
         #internal Variables !!!Dont use global variables!!!!!
+        self.path = os.path.expanduser(config.get('path'))
         self.is_active = False
-        self.is_log = True
+        self.is_log = config.getboolean('debug',False)
         self.values = {'extruder' : 'temperature',
                        'heater_bed' : 'temperature',
                        'optical_filament_width_sensor':'Diameter'}
         self.eventtime = self.reactor.NEVER
-        self.text = ''
+        self.text = []
         self.duration = 0.
         #register the event handler
         self.logger_update_timer = self.reactor.register_timer(
@@ -65,18 +66,25 @@ class fileWriter:
                 except Exception as e:
                     line += str(e)+delimiter
             if self.is_log: self.gcode.respond_info(line)
-            self.text += line
+            self.text.append(line)
     #Constructor for the Header
     def _write_header(self, delimiter='\t'):
         header = 'time'+delimiter
         for obj, value in self.values.items():
             header += obj + " " + value + delimiter
-        self.text = header
+        self.text.append(header)
     #file write method
-    def _save_to_file(self, filename):
-        with open(os.path.join(self.path, filename), 'a') as file:
-            file.write(self.text)
-        pass
+    def _save_to_file(self,filename):
+        if len(self.text)==0:
+            self.gcode.respond_info("Nothing to save!")
+        else:
+            self.gcode.respond_info(str(os.path.join(self.path, filename)))
+            try:
+                f = open(os.path.join(self.path, filename), 'a')
+                f.writelines(self.text)
+                f.close()
+            except Exception as e:
+                self.gcode.respond_info("Error: " + e)
     #Main event running
     def _logger_event(self, eventtime):
         nextwake = self.reactor.NEVER
@@ -85,7 +93,7 @@ class fileWriter:
                 self.gcode.respond_info(
                     "Now the Data logger is active: "+ str(eventtime))
             if self.print_stats.get_status(eventtime)['state']=='printing':
-                if self.text == '': self._write_header()
+                if len(self.text)==0: self._write_header()
                 self._write_values(eventtime)
             nextwake = eventtime + self.duration
         return nextwake
@@ -115,24 +123,30 @@ class fileWriter:
             gcmd.respond_info("Wrong format of input! Try obj.value")
         po = self.printer.lookup_object(obj, None)
         if po is None or not hasattr(po, 'get_status'):
-            raise KeyError(obj) 
+            raise KeyError(obj)
         self.values.update({obj:value})
         gcmd.respond_info("Added Value for logging")
     def cmd_clear(self, gcmd):
-        self.text = ''
-        gcmd.responde_info("Cleared data in the cache")
+        self.text = []
+        gcmd.respond_info("Cleared data in the cache")
     def cmd_save(self, gcmd):
         fn = gcmd.get('FILENAME', None)
-        if fn==None: fn=self.st.get_status(
-                self.eventtime)['filename'].replace('.gcode', '_log.out')
+        if fn is None:
+            fn=self.print_stats.get_status(
+                self.reactor.NOW)['filename']
+            try:
+                fn = fn.replace('.gcode', '_log.out')
+            except Exception as e:
+                fn = 'default.out'
+                self.gcode.respond_info('Filename not found use default' + e)
         try:
             self._save_to_file(fn)
         except Exception as e:
             raise e
-        gcmd.responde_info("Sucessfully worte to file " + fn) 
+        gcmd.respond_info("Sucessfully worte to file " + fn)
     #Add a status variable
     def get_status(self, eventtime):
-        return {'is_active':self.is_active, 
+        return {'is_active':self.is_active,
                 'cache_text':self.text}
 
 def load_config(config):
