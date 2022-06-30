@@ -6,9 +6,13 @@ python -m compileall file_writer.py
 ```
 ## Initialisation
 To enable the plugin ist has to be declaired in the pinter.cfg or similar file and suppyl the diractory to save the output file. 
+The values can be defined here but also added with a gcode. However, the values specifed here will always be logged
 ```
 [file_writer]
 path: ~\source
+values:
+    object, value
+    extruder, temperature
 ```
 ## Commands
 The plugin is then running in the background and can be enabled by GCode commands build in the function. It can be enabled and disabled by the folloing commands, note that logging is only performed during printing!!!
