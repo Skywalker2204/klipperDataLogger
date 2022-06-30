@@ -18,10 +18,10 @@ class fileWriter:
         #internal Variables !!!Dont use global variables!!!!!
         self.path = os.path.expanduser(config.get('path'))
         self.is_active = False
+        self.behaviour = 'pritning'
         self.is_log = config.getboolean('debug',False)
-        self.values = {'extruder' : 'temperature',
-                       'heater_bed' : 'temperature',
-                       'optical_filament_width_sensor':'Diameter'}
+        self.values = config.getlists('values', seps=(',','\n'))
+                                     #[object, value]
         self.eventtime = self.reactor.NEVER
         self.text = []
         self.duration = 0.
@@ -57,9 +57,9 @@ class fileWriter:
     #Construction of the line
     def _write_values(self, eventtime, delimiter='\t'):
         pd = self.print_stats.get_status(eventtime)['print_duration']
-        if pd:
+        if pd or self.behaviour=='all':
             line = '\n' + str(pd) + delimiter
-            for obj, value in self.values.items():
+            for obj, value in self.values:
                 po = self._lookup_object(obj)
                 try:
                     line += str(po.get_status(eventtime)[value])+delimiter
@@ -70,7 +70,7 @@ class fileWriter:
     #Constructor for the Header
     def _write_header(self, delimiter='\t'):
         header = 'time'+delimiter
-        for obj, value in self.values.items():
+        for obj, value in self.values:
             header += obj + " " + value + delimiter
         self.text.append(header)
     #file write method
@@ -101,6 +101,7 @@ class fileWriter:
     def cmd_log_enable(self, gcmd):
         self.is_active=True
         self.duration=gcmd.get_float('DURATION', default=1., minval=0.)
+        self.behaviour= gcmd.get('BEHAVIOUR', default=self.behaviour)
         self.reactor.update_timer(
             self.logger_update_timer, self.reactor.NOW)
         gcmd.respond_info("Data logging is enabled")
@@ -124,8 +125,12 @@ class fileWriter:
         po = self.printer.lookup_object(obj, None)
         if po is None or not hasattr(po, 'get_status'):
             raise KeyError(obj)
-        self.values.update({obj:value})
-        gcmd.respond_info("Added Value for logging")
+        self.values.append([obj,value])
+        text=''
+        if self.is_log:
+            for obj, val in self.values:
+                text += ' '+obj+' '+val
+        gcmd.respond_info("Added Value for logging"+text)
     def cmd_clear(self, gcmd):
         self.text = []
         gcmd.respond_info("Cleared data in the cache")
@@ -147,7 +152,8 @@ class fileWriter:
     #Add a status variable
     def get_status(self, eventtime):
         return {'is_active':self.is_active,
-                'cache_text':self.text}
+                'cache_text':self.text, 
+                'values':self.values}
 
 def load_config(config):
     return fileWriter(config)
