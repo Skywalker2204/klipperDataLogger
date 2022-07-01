@@ -79,13 +79,14 @@ class fileWriter:
         if len(self.text)==0:
             self.gcode.respond_info("Nothing to save!")
         else:
-            self.gcode.respond_info(str(os.path.join(self.path, filename)))
             try:
+                self.gcode.respond_info(str(os.path.join(self.path, filename)))
                 f = open(os.path.join(self.path, filename), 'a')
                 f.writelines(self.text)
                 f.close()
             except Exception as e:
                 self.gcode.respond_info("Error: " + e)
+                raise e
     #Main event running
     def _logger_event(self, eventtime):
         nextwake = self.reactor.NEVER
@@ -126,15 +127,20 @@ class fileWriter:
         po = self.printer.lookup_object(obj, None)
         if po is None or not hasattr(po, 'get_status'):
             raise KeyError(obj)
-        self.values.append([obj,value])
-        text=''
-        if self.is_log:
-            for obj, val in self.values:
-                text += ' '+obj+' '+val
-        gcmd.respond_info("Added Value for logging"+self.name+text)
+        if [obj, value] in self.values:
+            gcmd.respond_info("Values are already logged")
+        else:
+            self.values.append([obj,value])
+            text=''
+            if self.is_log:
+                for obj, val in self.values:
+                    text += ' '+obj+' '+val
+            gcmd.respond_info("Added Value for logging"+self.name+text)
+        
     def cmd_clear(self, gcmd):
         self.text = []
         gcmd.respond_info("Cleared data in the cache")
+        
     def cmd_save(self, gcmd):
         fn = gcmd.get('FILENAME', None)
         if fn is None:
