@@ -12,6 +12,7 @@ class fileWriter:
     def __init__(self, config):
         self.printer=config.get_printer()
         self.reactor = self.printer.get_reactor()
+        self.name=config.get_name().split()[-1]
         #get objects
         self.sd = self.printer.load_object(config, 'virtual_sdcard')
         self.print_stats = self.printer.load_object(config, 'print_stats')
@@ -20,7 +21,7 @@ class fileWriter:
         self.is_active = False
         self.behaviour = 'pritning'
         self.is_log = config.getboolean('debug',False)
-        self.values = config.getlists('values', seps=(',','\n'))
+        self.values = list(config.getlists('values', seps=(',','\n')))
                                      #[object, value]
         self.eventtime = self.reactor.NEVER
         self.text = []
@@ -130,7 +131,7 @@ class fileWriter:
         if self.is_log:
             for obj, val in self.values:
                 text += ' '+obj+' '+val
-        gcmd.respond_info("Added Value for logging"+text)
+        gcmd.respond_info("Added Value for logging"+self.name+text)
     def cmd_clear(self, gcmd):
         self.text = []
         gcmd.respond_info("Cleared data in the cache")
@@ -155,5 +156,5 @@ class fileWriter:
                 'cache_text':self.text, 
                 'values':self.values}
 
-def load_config(config):
+def load_config_prefix(config):
     return fileWriter(config)
